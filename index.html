@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IdeaBoard Servo Controller</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      text-align: center;
+      background: #121212;
+      color: #ffffff;
+      padding: 2rem;
+    }
+    .card {
+      max-width: 380px;
+      margin: auto;
+      background: #1e1e1e;
+      padding: 1.5rem;
+      border-radius: 12px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+    }
+    button {
+      background: #007acc;
+      color: white;
+      border: none;
+      padding: 12px 20px;
+      margin: 6px;
+      border-radius: 8px;
+      font-size: 1rem;
+      cursor: pointer;
+    }
+    button:disabled { background: #444; cursor: not-allowed; }
+    input[type="range"] {
+      width: 100%;
+      margin: 20px 0;
+      accent-color: #007acc;
+    }
+    .angle-display { font-size: 2.5rem; font-weight: bold; margin: 10px 0; }
+    .status { color: #aaa; font-size: 0.9rem; margin-bottom: 15px; }
+  </style>
+</head>
+<body>
+
+  <div class="card">
+    <h2>IdeaBoard BLE Servo</h2>
+    <div id="status" class="status">Status: Disconnected</div>
+    <button id="connectBtn" onclick="connectBLE()">UTN servo Giro</button>
+
+    <div class="angle-display"><span id="angleVal">90</span>°</div>
+    <input type="range" id="servoSlider" min="0" max="180" value="90" disabled
+           oninput="updateServo(this.value)">
+
+    <div>
+      <button class="preset" onclick="setPreset(0)" disabled>0°</button>
+      <button class="preset" onclick="setPreset(90)" disabled>90°</button>
+      <button class="preset" onclick="setPreset(180)" disabled>180°</button>
+    </div>
+  </div>
+
+  <script>
+    const SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+    const RX_CHAR_UUID = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
+    let rxCharacteristic = null;
+    let isWriting = false;
+
+    async function connectBLE() {
+      try {
+        document.getElementById('status').innerText = 'Scanning...';
+        const device = await navigator.bluetooth.requestDevice({
+          filters: [{ name: 'IdeaBoard-Servo' }],
+          optionalServices: [SERVICE_UUID]
+        });
+
+        device.addEventListener('gattserverdisconnected', onDisconnected);
+        const server = await device.gatt.connect();
+        const service = await server.getPrimaryService(SERVICE_UUID);
+        rxCharacteristic = await service.getCharacteristic(RX_CHAR_UUID);
+
+        document.getElementById('status').innerText = 'Status: Connected';
+        document.getElementById('servoSlider').disabled = false;
+        document.querySelectorAll('.preset').forEach(b => b.disabled = false);
+      } catch (err) {
+        document.getElementById('status').innerText = 'Error: ' + err.message;
+      }
+    }
+
+    function onDisconnected() {
+      document.getElementById('status').innerText = 'Status: Disconnected';
+      document.getElementById('servoSlider').disabled = true;
+      document.querySelectorAll('.preset').forEach(b => b.disabled = true);
+    }
+
+    async function updateServo(angle) {
+      document.getElementById('angleVal').innerText = angle;
+      if (!rxCharacteristic || isWriting) return;
+      try {
+        isWriting = true;
+        // Send single binary byte (0-180) matching main.c len == 1 branch
+        const data = new Uint8Array([parseInt(angle, 10)]);
+        await rxCharacteristic.writeValueWithoutResponse(data);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        isWriting = false;
+      }
+    }
+
+    function setPreset(angle) {
+      document.getElementById('servoSlider').value = angle;
+      updateServo(angle);
+    }
+  </script>
+</body>
+</html>
